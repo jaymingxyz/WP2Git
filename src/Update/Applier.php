@@ -27,7 +27,12 @@ final class Applier {
 	/**
 	 * @return array{applied:int,conflicts:int,skipped:int,deleted:int}|WP_Error
 	 */
-	public function apply( string $headSha ) {
+	/**
+	 * @param bool $force Re-apply the entire branch head, ignoring the synced
+	 *                    cursor — used to forcibly bring the site back in line
+	 *                    with GitHub (local copies are still preserved on conflict).
+	 */
+	public function apply( string $headSha, bool $force = false ) {
 		if ( ! $this->plugin->isEnabled() ) {
 			return new WP_Error( 'wp2git_disabled', __( 'Sync is not enabled.', 'wp2git' ) );
 		}
@@ -42,7 +47,7 @@ final class Applier {
 		}
 
 		try {
-			return $this->run( $headSha );
+			return $this->run( $headSha, $force );
 		} finally {
 			$this->plugin->state->release();
 		}
@@ -51,8 +56,10 @@ final class Applier {
 	/**
 	 * @return array{applied:int,conflicts:int,skipped:int,deleted:int}|WP_Error
 	 */
-	private function run( string $headSha ) {
-		$base    = $this->plugin->state->lastSyncedSha();
+	private function run( string $headSha, bool $force = false ) {
+		// A forced re-apply diffs against the full tree (base = null) so every
+		// file is re-evaluated against disk, not just what changed since the cursor.
+		$base    = $force ? null : $this->plugin->state->lastSyncedSha();
 		$changes = $this->plugin->fetcher->changes( $base, $headSha );
 		if ( is_wp_error( $changes ) ) {
 			return $changes;

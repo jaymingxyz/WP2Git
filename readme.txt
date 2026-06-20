@@ -1,10 +1,10 @@
 === WP2Git ===
-Contributors: tungstendigital.net
+Contributors: tungstendigital
 Tags: github, backup, deploy, sync, version-control
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,12 @@ No. WP2Git syncs files under wp-content only. Database content, secrets, and PII
 stay out of the repository by design.
 
 == Changelog ==
+
+= 1.1.0 =
+* "Check GitHub for updates now" gained a "Force re-apply every file" option that
+  re-syncs the entire branch synchronously, ignoring the up-to-date cursor —
+  useful when local files have drifted from the repository. Local copies of any
+  differing files are still preserved to the Conflicts screen.
 
 = 1.0.0 =
 * First stable release.

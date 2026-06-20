@@ -239,6 +239,8 @@ final class SettingsPage {
 			$this->redirect( 'error', __( 'Backup-only mode is on. Turn on auto-apply to pull updates from GitHub.', 'wp2git' ) );
 		}
 
+		$force = ! empty( $_POST['wp2git_force'] );
+
 		$head = $this->plugin->gitData->branchHead( $this->plugin->settings->branch() );
 		if ( is_wp_error( $head ) ) {
 			$this->redirect(
@@ -250,11 +252,12 @@ final class SettingsPage {
 		if ( $head === null ) {
 			$this->redirect( 'ok', __( 'The branch has no commits yet — nothing to apply.', 'wp2git' ) );
 		}
-		if ( $head === $this->plugin->state->lastSyncedSha() ) {
+		// A forced re-apply ignores the up-to-date cursor and re-evaluates every file.
+		if ( ! $force && $head === $this->plugin->state->lastSyncedSha() ) {
 			$this->redirect( 'ok', __( 'Already up to date with GitHub.', 'wp2git' ) );
 		}
 
-		$result = $this->plugin->applier->apply( $head );
+		$result = $this->plugin->applier->apply( $head, $force );
 		if ( is_wp_error( $result ) ) {
 			$this->redirect(
 				'error',
@@ -561,17 +564,22 @@ final class SettingsPage {
 				<?php submit_button( __( 'Back up now', 'wp2git' ), 'primary', 'submit', false ); ?>
 			</form>
 			<?php if ( $s->autoApply() ) : ?>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block">
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block"
+						onsubmit="return ! this.wp2git_force.checked || confirm('<?php echo esc_js( __( 'Force re-apply every file from GitHub now? Files that differ locally are overwritten with the GitHub version (your copies are saved to the Conflicts screen).', 'wp2git' ) ); ?>');">
 					<input type="hidden" name="action" value="wp2git_pull_now">
 					<?php wp_nonce_field( self::NONCE ); ?>
 					<?php submit_button( __( 'Check GitHub for updates now', 'wp2git' ), 'secondary', 'submit', false ); ?>
+					<label style="margin-left:.5em">
+						<input type="checkbox" name="wp2git_force" value="1">
+						<?php esc_html_e( 'Force re-apply every file now', 'wp2git' ); ?>
+					</label>
 				</form>
 			<?php endif; ?>
 		</p>
 		<p class="description">
 			<?php
 			if ( $s->autoApply() ) {
-				esc_html_e( 'Back up now pushes local changes to GitHub. Check for updates pulls the latest commit and applies it to this site — both run immediately.', 'wp2git' );
+				esc_html_e( 'Back up now pushes local changes to GitHub. Check for updates pulls the latest commit and applies it to this site — both run immediately. Tick “Force re-apply every file” to re-sync the whole branch even when nothing looks changed (useful if local files drifted).', 'wp2git' );
 			} else {
 				esc_html_e( 'Backup-only mode is on: Back up now pushes local changes to GitHub. Nothing is pulled from GitHub onto this site. Enable auto-apply under “Auto-apply security” to sync both ways.', 'wp2git' );
 			}
