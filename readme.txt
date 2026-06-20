@@ -4,7 +4,7 @@ Tags: github, backup, deploy, sync, version-control
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,10 +85,20 @@ and never returned through the REST API.
 
 = Does it back up my database? =
 
-No. WP2Git syncs files under wp-content only. Database content, secrets, and PII
-stay out of the repository by design.
+Files under wp-content are the core sync. Optionally, you can also back up
+published Posts and Pages (Backup → Database content): each is exported to GitHub
+as a Markdown file with YAML frontmatter. That export is one-way — content is
+written to GitHub but never back to your database. Everything else in the
+database (settings, users, secrets, PII) stays out of the repository by design.
 
 == Changelog ==
+
+= 1.2.0 =
+* New: back up Posts and Pages. Enable them under Backup → Database content and
+  WP2Git exports each published post/page to GitHub as a readable Markdown file
+  with YAML frontmatter (under wp2git-content/), committed incrementally like
+  files. Edits queue a backup automatically. This is a one-way backup — content
+  is exported to GitHub but never written back to your database.
 
 = 1.1.0 =
 * "Check GitHub for updates now" gained a "Force re-apply every file" option that

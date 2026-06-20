@@ -79,6 +79,20 @@ final class Settings {
 	}
 
 	/**
+	 * Database post types to back up to GitHub (e.g. ['post','page']). Empty by
+	 * default — the plugin stays files-only unless the user opts in.
+	 *
+	 * @return list<string>
+	 */
+	public function contentTypes(): array {
+		$stored = $this->get( 'content_types', array() );
+		if ( ! is_array( $stored ) ) {
+			return array();
+		}
+		return array_values( array_filter( array( 'post', 'page' ), static fn ( $t ) => ! empty( $stored[ $t ] ) ) );
+	}
+
+	/**
 	 * Whether incoming commits are applied to this site. When false the plugin
 	 * is backup-only: it still pushes wp-content to GitHub but never pulls or
 	 * writes anything from GitHub back to the live site. Defaults to true so

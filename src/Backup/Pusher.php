@@ -120,11 +120,14 @@ final class Pusher {
 	 * @return array{changes:list<array{path:string,op:string}>,tree:list<array<string,mixed>>}|null
 	 */
 	private function planJob(): ?array {
-		$scanned = $this->plugin->scanner->scan();   // repoPath => localSha.
+		// Files under wp-content plus any exported database content (posts/pages).
+		// Their repo paths never collide (exports live under a reserved prefix),
+		// so the union diffs against the manifest exactly like files do.
+		$current = $this->plugin->scanner->scan() + $this->plugin->exporter->scan();
 		$known   = $this->plugin->manifest->all();
 
 		$changes = array();
-		foreach ( $scanned as $repoPath => $localSha ) {
+		foreach ( $current as $repoPath => $localSha ) {
 			if ( ( $known[ $repoPath ]['blob_sha'] ?? null ) !== $localSha ) {
 				$changes[] = array(
 					'path' => $repoPath,
@@ -133,7 +136,7 @@ final class Pusher {
 			}
 		}
 		foreach ( $known as $repoPath => $_row ) {
-			if ( ! isset( $scanned[ $repoPath ] ) ) {
+			if ( ! isset( $current[ $repoPath ] ) ) {
 				$changes[] = array(
 					'path' => $repoPath,
 					'op'   => 'delete',
@@ -180,8 +183,8 @@ final class Pusher {
 				continue;
 			}
 
-			$content = @file_get_contents( $this->plugin->paths->toLocal( $repoPath ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			if ( $content === false ) {
+			$content = $this->contentFor( $repoPath );
+			if ( $content === null ) {
 				continue; // Vanished since planning; skip.
 			}
 			$blobSha = $this->plugin->gitData->createBlob( $content );
@@ -201,6 +204,18 @@ final class Pusher {
 			'job'  => $job,
 			'done' => $job['changes'] === array(),
 		);
+	}
+
+	/**
+	 * Content for a path being pushed: exported database content is regenerated
+	 * from the post, everything else is read from disk. Null means "skip".
+	 */
+	private function contentFor( string $repoPath ): ?string {
+		if ( $this->plugin->exporter->owns( $repoPath ) ) {
+			return $this->plugin->exporter->render( $repoPath );
+		}
+		$raw = @file_get_contents( $this->plugin->paths->toLocal( $repoPath ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		return $raw === false ? null : $raw;
 	}
 
 	// --- Finalize ---------------------------------------------------------
@@ -262,8 +277,11 @@ final class Pusher {
 			if ( $entry['sha'] === null ) {
 				$this->plugin->manifest->delete( $path );
 			} else {
-				$sha = (string) $entry['sha'];
-				$this->plugin->manifest->upsert( $path, $this->plugin->scope->contentType( $path ), $sha, $sha, $commitSha );
+				$sha  = (string) $entry['sha'];
+				$type = $this->plugin->exporter->owns( $path )
+					? $this->plugin->exporter->contentType( $path )
+					: $this->plugin->scope->contentType( $path );
+				$this->plugin->manifest->upsert( $path, $type, $sha, $sha, $commitSha );
 			}
 		}
 

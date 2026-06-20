@@ -8,6 +8,7 @@ defined( 'ABSPATH' ) || exit;
 
 use WP2Git\Admin\ConflictsPage;
 use WP2Git\Admin\SettingsPage;
+use WP2Git\Backup\ContentExporter;
 use WP2Git\Backup\FileScanner;
 use WP2Git\Backup\Manifest;
 use WP2Git\Backup\Pusher;
@@ -49,6 +50,7 @@ final class Plugin {
 	public readonly Manifest $manifest;
 	public readonly GitData $gitData;
 	public readonly FileScanner $scanner;
+	public readonly ContentExporter $exporter;
 	public readonly Pusher $pusher;
 	public readonly ChangeFetcher $fetcher;
 	public readonly SafetyGate $gate;
@@ -75,6 +77,7 @@ final class Plugin {
 		$this->manifest  = new Manifest();
 		$this->gitData   = new GitData( $this->github, $this->settings );
 		$this->scanner   = new FileScanner( $this->paths, $this->scope, $this->logger );
+		$this->exporter  = new ContentExporter( $this->settings );
 		$this->fetcher   = new ChangeFetcher( $this->gitData );
 		$this->gate      = new SafetyGate( $this->paths, $this->scope );
 		$this->pusher    = new Pusher( $this );

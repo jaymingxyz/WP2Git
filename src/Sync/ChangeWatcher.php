@@ -39,6 +39,10 @@ final class ChangeWatcher {
 		add_action( 'add_attachment', array( $this, 'onAttachment' ), 10, 0 );
 		add_action( 'edit_attachment', array( $this, 'onAttachment' ), 10, 0 );
 		add_action( 'delete_attachment', array( $this, 'onAttachment' ), 10, 0 );
+
+		// Posts/pages — only meaningful when database-content backup is enabled.
+		add_action( 'save_post', array( $this, 'onPostChange' ), 10, 2 );
+		add_action( 'trashed_post', array( $this, 'onPostChange' ), 10, 1 );
 	}
 
 	public function onChange(): void {
@@ -47,6 +51,26 @@ final class ChangeWatcher {
 
 	public function onAttachment(): void {
 		if ( in_array( 'uploads', $this->plugin->scope->dirs(), true ) ) {
+			do_action( 'wp2git_local_change' );
+		}
+	}
+
+	/**
+	 * Queue a backup when a backed-up post type changes. Skips revisions and
+	 * autosaves so routine editing doesn't thrash the queue (the push debounces).
+	 *
+	 * @param int          $postId Post ID (from save_post / trashed_post).
+	 * @param mixed        $post   WP_Post for save_post; absent for trashed_post.
+	 */
+	public function onPostChange( $postId, $post = null ): void {
+		if ( ! $this->plugin->exporter->isEnabled() ) {
+			return;
+		}
+		if ( wp_is_post_revision( $postId ) || wp_is_post_autosave( $postId ) ) {
+			return;
+		}
+		$post = $post instanceof \WP_Post ? $post : get_post( $postId );
+		if ( $post instanceof \WP_Post && in_array( $post->post_type, $this->plugin->exporter->enabledTypes(), true ) ) {
 			do_action( 'wp2git_local_change' );
 		}
 	}

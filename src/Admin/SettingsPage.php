@@ -313,12 +313,17 @@ final class SettingsPage {
 		foreach ( \WP2Git\Sync\Scope::DIRS as $dir ) {
 			$scope[ $dir ] = ! empty( $_POST['scope'][ $dir ] );
 		}
-		$old_interval = (int) $this->plugin->settings->get( 'schedule_interval', HOUR_IN_SECONDS );
-		$interval     = max( 0, isset( $_POST['wp2git_interval'] ) ? (int) $_POST['wp2git_interval'] : HOUR_IN_SECONDS );
+		$content_types = array(
+			'post' => ! empty( $_POST['content_types']['post'] ),
+			'page' => ! empty( $_POST['content_types']['page'] ),
+		);
+		$old_interval  = (int) $this->plugin->settings->get( 'schedule_interval', HOUR_IN_SECONDS );
+		$interval      = max( 0, isset( $_POST['wp2git_interval'] ) ? (int) $_POST['wp2git_interval'] : HOUR_IN_SECONDS );
 
 		$this->plugin->settings->merge(
 			array(
 				'scope'             => $scope,
+				'content_types'     => $content_types,
 				'schedule_interval' => $interval,
 			)
 		);
@@ -525,8 +530,9 @@ final class SettingsPage {
 
 		<h2><?php esc_html_e( 'Backup', 'wp2git' ); ?></h2>
 		<?php
-		$toggles  = $this->plugin->scope->toggles();
-		$interval = (int) $s->get( 'schedule_interval', HOUR_IN_SECONDS );
+		$toggles       = $this->plugin->scope->toggles();
+		$content_types = $this->plugin->settings->contentTypes();
+		$interval      = (int) $s->get( 'schedule_interval', HOUR_IN_SECONDS );
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="wp2git_save_backup">
@@ -541,6 +547,20 @@ final class SettingsPage {
 						</label>
 					<?php endforeach; ?>
 					<p class="description"><?php esc_html_e( 'uploads can be large/binary; leave off unless you need media versioned.', 'wp2git' ); ?></p></td>
+				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Database content', 'wp2git' ); ?></th>
+					<td>
+						<label style="display:inline-block;margin-right:1.2em">
+							<input type="checkbox" name="content_types[post]" value="1" <?php checked( in_array( 'post', $content_types, true ) ); ?>>
+							<?php esc_html_e( 'Posts', 'wp2git' ); ?>
+						</label>
+						<label style="display:inline-block;margin-right:1.2em">
+							<input type="checkbox" name="content_types[page]" value="1" <?php checked( in_array( 'page', $content_types, true ) ); ?>>
+							<?php esc_html_e( 'Pages', 'wp2git' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Backs up published posts/pages to GitHub as Markdown files (under wp2git-content/). One-way backup — content is exported to GitHub but never written back to your database.', 'wp2git' ); ?></p>
+					</td>
 				</tr>
 				<tr>
 					<th><label for="wp2git_interval"><?php esc_html_e( 'Scheduled backup', 'wp2git' ); ?></label></th>

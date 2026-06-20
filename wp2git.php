@@ -3,7 +3,7 @@
  * Plugin Name:       WP2Git
  * Plugin URI:        https://github.com/jaymingxyz/WP2Git
  * Description:        Two-way sync between wp-content and a GitHub repository: back up to GitHub and apply commits back to the site.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Tungsten Digital
@@ -27,7 +27,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-define( 'WP2GIT_VERSION', '1.1.0' );
+define( 'WP2GIT_VERSION', '1.2.0' );
 define( 'WP2GIT_FILE', __FILE__ );
 define( 'WP2GIT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP2GIT_URL', plugin_dir_url( __FILE__ ) );
