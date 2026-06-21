@@ -25,6 +25,7 @@ use WP2Git\Sync\Scheduler;
 use WP2Git\Sync\Scope;
 use WP2Git\Update\Applier;
 use WP2Git\Update\ChangeFetcher;
+use WP2Git\Update\ContentImporter;
 use WP2Git\Update\Conflicts;
 use WP2Git\Update\SafetyGate;
 
@@ -54,6 +55,7 @@ final class Plugin {
 	public readonly Pusher $pusher;
 	public readonly ChangeFetcher $fetcher;
 	public readonly SafetyGate $gate;
+	public readonly ContentImporter $importer;
 	public readonly Applier $applier;
 	public readonly Conflicts $conflicts;
 	public readonly Scheduler $scheduler;
@@ -80,6 +82,7 @@ final class Plugin {
 		$this->exporter  = new ContentExporter( $this->settings );
 		$this->fetcher   = new ChangeFetcher( $this->gitData );
 		$this->gate      = new SafetyGate( $this->paths, $this->scope );
+		$this->importer  = new ContentImporter( $this->settings, $this->exporter );
 		$this->pusher    = new Pusher( $this );
 		$this->applier   = new Applier( $this );
 		$this->conflicts = new Conflicts( $this );

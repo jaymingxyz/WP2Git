@@ -4,7 +4,7 @@ Tags: github, backup, deploy, sync, version-control
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -87,11 +87,20 @@ and never returned through the REST API.
 
 Files under wp-content are the core sync. Optionally, you can also back up
 published Posts and Pages (Backup → Database content): each is exported to GitHub
-as a Markdown file with YAML frontmatter. That export is one-way — content is
-written to GitHub but never back to your database. Everything else in the
-database (settings, users, secrets, PII) stays out of the repository by design.
+as a Markdown file with YAML frontmatter. When auto-apply is on, edits to those
+files on GitHub are applied back to the matching post (title, excerpt and body);
+removing a file never deletes a post. Everything else in the database (settings,
+users, secrets, PII) stays out of the repository by design.
 
 == Changelog ==
+
+= 1.3.0 =
+* Posts/Pages backup is now two-way: with auto-apply on, edits to the exported
+  Markdown files on GitHub are applied back to the matching post (title, excerpt
+  and body). Removing a file never deletes a post — it is re-exported instead, so
+  content can't be lost through a git deletion. Exports no longer record the
+  post's modified date, so GitHub→WP round-trips stay stable.
+* Added a "Developed by Tungsten Digital" note to the WP2Git screen.
 
 = 1.2.0 =
 * New: back up Posts and Pages. Enable them under Backup → Database content and

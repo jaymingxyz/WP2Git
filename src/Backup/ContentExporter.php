@@ -126,16 +126,17 @@ final class ContentExporter {
 	 * the same post always hashes to the same blob (no spurious diffs).
 	 */
 	private function renderPost( WP_Post $post ): string {
+		// Note: post_modified is intentionally excluded. It changes on every DB
+		// write, so including it would make GitHub→WP round-trips churn endlessly.
 		$front = array(
-			'id'           => (string) $post->ID,
-			'type'         => $post->post_type,
-			'slug'         => $post->post_name,
-			'title'        => $post->post_title,
-			'status'       => $post->post_status,
-			'date_gmt'     => $post->post_date_gmt,
-			'modified_gmt' => $post->post_modified_gmt,
-			'author'       => (string) get_the_author_meta( 'user_login', (int) $post->post_author ),
-			'excerpt'      => $post->post_excerpt,
+			'id'       => (string) $post->ID,
+			'type'     => $post->post_type,
+			'slug'     => $post->post_name,
+			'title'    => $post->post_title,
+			'status'   => $post->post_status,
+			'date_gmt' => $post->post_date_gmt,
+			'author'   => (string) get_the_author_meta( 'user_login', (int) $post->post_author ),
+			'excerpt'  => $post->post_excerpt,
 		);
 
 		$lines = array( '---' );

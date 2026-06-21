@@ -394,6 +394,19 @@ final class SettingsPage {
 
 		echo '<div class="wrap"><h1>' . esc_html__( 'WP2Git', 'wp2git' ) . '</h1>';
 
+		printf(
+			'<div style="background:#fff;border:1px solid #dcdcde;border-left:4px solid #2271b1;padding:8px 12px;margin:10px 0;max-width:760px"><p style="margin:0">%s %s</p></div>',
+			esc_html__( 'Developed by Tungsten Digital.', 'wp2git' ),
+			sprintf(
+				/* translators: %s: link to the developer's website. */
+				wp_kses(
+					__( 'Need your own custom plugin built? Visit <a href="%s" target="_blank" rel="noopener">tungstendigital.net</a>.', 'wp2git' ),
+					array( 'a' => array( 'href' => array(), 'target' => array(), 'rel' => array() ) )
+				),
+				esc_url( 'https://tungstendigital.net/' )
+			)
+		);
+
 		if ( $notice !== '' ) {
 			printf( '<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr( $type ), esc_html( $notice ) );
 		}
@@ -559,7 +572,7 @@ final class SettingsPage {
 							<input type="checkbox" name="content_types[page]" value="1" <?php checked( in_array( 'page', $content_types, true ) ); ?>>
 							<?php esc_html_e( 'Pages', 'wp2git' ); ?>
 						</label>
-						<p class="description"><?php esc_html_e( 'Backs up published posts/pages to GitHub as Markdown files (under wp2git-content/). One-way backup — content is exported to GitHub but never written back to your database.', 'wp2git' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Backs up published posts/pages to GitHub as Markdown files (under wp2git-content/). When auto-apply is on, edits to those files on GitHub are applied back to the matching post. Removing a file never deletes a post — it is simply re-exported.', 'wp2git' ); ?></p>
 					</td>
 				</tr>
 				<tr>

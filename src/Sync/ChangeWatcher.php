@@ -7,6 +7,7 @@ namespace WP2Git\Sync;
 defined( 'ABSPATH' ) || exit;
 
 use WP2Git\Plugin;
+use WP2Git\State;
 
 /**
  * Best-effort fast path: fires wp2git_local_change when a dashboard action is
@@ -64,6 +65,11 @@ final class ChangeWatcher {
 	 */
 	public function onPostChange( $postId, $post = null ): void {
 		if ( ! $this->plugin->exporter->isEnabled() ) {
+			return;
+		}
+		// Don't echo: a save during a pull is the importer writing GitHub's content
+		// back, not a user edit, so it must not queue a push back to GitHub.
+		if ( $this->plugin->state->current() === State::PULLING ) {
 			return;
 		}
 		if ( wp_is_post_revision( $postId ) || wp_is_post_autosave( $postId ) ) {

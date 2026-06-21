@@ -81,6 +81,14 @@ final class Applier {
 			$path   = $change['path'];
 			$status = $change['status'];
 
+			// Exported database content (posts/pages) goes to the importer, not
+			// the filesystem. It has its own validation, so it bypasses the file
+			// safety gate (which would reject it as out-of-scope anyway).
+			if ( $this->plugin->exporter->owns( $path ) ) {
+				$this->applyContentChange( $change, $stats, $headSha );
+				continue;
+			}
+
 			// Renames: drop the old path, then add the new one.
 			if ( $status === 'renamed' && is_string( $change['previous'] ) ) {
 				$this->deleteFile( $fs, $change['previous'], $stats );
@@ -113,6 +121,51 @@ final class Applier {
 		$this->plugin->logger->log( Logger::PULL, $stats, $headSha );
 
 		return $stats;
+	}
+
+	/**
+	 * Apply an incoming change to an exported content file back onto the
+	 * database. Never deletes a post: a removed file just drops the manifest
+	 * entry so the post re-exports, keeping GitHub consistent without data loss.
+	 *
+	 * @param array{path:string,status:string,sha:?string,previous:?string} $change
+	 * @param array{applied:int,conflicts:int,skipped:int,deleted:int}       $stats
+	 */
+	private function applyContentChange( array $change, array &$stats, string $headSha ): void {
+		$path = $change['path'];
+
+		if ( $change['status'] === 'renamed' && is_string( $change['previous'] ) && $this->plugin->exporter->owns( $change['previous'] ) ) {
+			$this->plugin->manifest->delete( $change['previous'] );
+		}
+
+		if ( $change['status'] === 'removed' ) {
+			$this->plugin->manifest->delete( $path );
+			$this->plugin->logger->log( Logger::PULL, array( 'content_kept' => $path ), $headSha );
+			++$stats['skipped'];
+			return;
+		}
+
+		if ( ! is_string( $change['sha'] ) || $change['sha'] === '' ) {
+			++$stats['skipped'];
+			return;
+		}
+
+		$content = $this->plugin->gitData->blobContent( $change['sha'] );
+		if ( is_wp_error( $content ) ) {
+			$this->plugin->logger->error( 'Content fetch failed', array( 'path' => $path ) );
+			++$stats['skipped'];
+			return;
+		}
+
+		$result = $this->plugin->importer->apply( $path, $content );
+		if ( 'updated' === $result || 'created' === $result ) {
+			$sha = (string) $change['sha'];
+			$this->plugin->manifest->upsert( $path, $this->plugin->exporter->contentType( $path ), $sha, $sha, $headSha );
+			++$stats['applied'];
+			$this->plugin->logger->log( Logger::PULL, array( $result => $path ), $headSha );
+		} else {
+			++$stats['skipped'];
+		}
 	}
 
 	/**
