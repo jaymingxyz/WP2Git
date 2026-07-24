@@ -205,6 +205,35 @@ final class SettingsPage {
 
 		$changed = (int) ( $result['changed'] ?? 0 );
 		if ( $changed === 0 ) {
+			$dbStats = $result['db_stats'] ?? null;
+			$scan    = $result['scan'] ?? null;
+
+			if ( is_array( $dbStats ) && $dbStats['enabled'] > 0 && $dbStats['snapshots'] === 0 ) {
+				$parts = array();
+				if ( ! empty( $dbStats['errors'] ) ) {
+					/* translators: %s: semicolon-separated error list. */
+					$parts[] = sprintf( __( 'Snapshot errors: %s', 'wp2git' ), implode( '; ', $dbStats['errors'] ) );
+				} else {
+					$parts[] = __( 'No database records matched the selected groups.', 'wp2git' );
+				}
+				$this->redirect(
+					'error',
+					sprintf(
+						/* translators: 1: number of database groups enabled, 2: diagnostic detail. */
+						__( 'Nothing to back up. %1$d database snapshot group(s) enabled but produced 0 files. %2$s', 'wp2git' ),
+						$dbStats['enabled'],
+						implode( ' ', $parts )
+					)
+				);
+			}
+
+			if ( is_array( $scan ) && $scan['files'] === 0 && $scan['content'] === 0 && $scan['database'] === 0 ) {
+				$this->redirect(
+					'error',
+					__( 'Nothing to back up — the scan found 0 files. Check that wp-content folders are enabled under Backup settings and that the site has content.', 'wp2git' )
+				);
+			}
+
 			$this->redirect( 'ok', __( 'Already up to date — nothing to back up.', 'wp2git' ) );
 		}
 
@@ -317,6 +346,10 @@ final class SettingsPage {
 			'post' => ! empty( $_POST['content_types']['post'] ),
 			'page' => ! empty( $_POST['content_types']['page'] ),
 		);
+		$database_groups = array();
+		foreach ( \WP2Git\Backup\DatabaseExporter::GROUPS as $group ) {
+			$database_groups[ $group ] = ! empty( $_POST['database_groups'][ $group ] );
+		}
 		$old_interval  = (int) $this->plugin->settings->get( 'schedule_interval', HOUR_IN_SECONDS );
 		$interval      = max( 0, isset( $_POST['wp2git_interval'] ) ? (int) $_POST['wp2git_interval'] : HOUR_IN_SECONDS );
 
@@ -324,6 +357,7 @@ final class SettingsPage {
 			array(
 				'scope'             => $scope,
 				'content_types'     => $content_types,
+				'database_groups'   => $database_groups,
 				'schedule_interval' => $interval,
 			)
 		);
@@ -332,6 +366,11 @@ final class SettingsPage {
 		// recurring action to lapse.
 		if ( $interval !== $old_interval ) {
 			$this->plugin->scheduler->rescheduleRecurringPush();
+		}
+		// A newly enabled/disabled folder or database group changes the desired
+		// repository tree even if no underlying WordPress record changed.
+		if ( $this->plugin->isEnabled() ) {
+			do_action( 'wp2git_local_change' );
 		}
 
 		$this->redirect( 'ok', __( 'Backup settings saved.', 'wp2git' ) );
@@ -543,9 +582,19 @@ final class SettingsPage {
 
 		<h2><?php esc_html_e( 'Backup', 'wp2git' ); ?></h2>
 		<?php
-		$toggles       = $this->plugin->scope->toggles();
-		$content_types = $this->plugin->settings->contentTypes();
-		$interval      = (int) $s->get( 'schedule_interval', HOUR_IN_SECONDS );
+		$toggles         = $this->plugin->scope->toggles();
+		$content_types   = $this->plugin->settings->contentTypes();
+		$database_types  = $this->plugin->settings->databaseGroups();
+		$interval        = (int) $s->get( 'schedule_interval', HOUR_IN_SECONDS );
+		$database_labels = array(
+			'site_editor'      => __( 'Site Editor templates, template parts, styles, navigation and patterns', 'wp2git' ),
+			'customizer'       => __( 'Customizer theme settings', 'wp2git' ),
+			'menus'            => __( 'Classic menus and menu locations', 'wp2git' ),
+			'custom_css'       => __( 'Additional CSS', 'wp2git' ),
+			'widgets'          => __( 'Widgets and sidebar assignments', 'wp2git' ),
+			'plugin_templates' => __( 'Recognized plugin and page-builder templates', 'wp2git' ),
+			'wpcode'           => __( 'WPCode snippets and legacy header/footer code', 'wp2git' ),
+		);
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="wp2git_save_backup">
@@ -573,6 +622,36 @@ final class SettingsPage {
 							<?php esc_html_e( 'Pages', 'wp2git' ); ?>
 						</label>
 						<p class="description"><?php esc_html_e( 'Backs up published posts/pages to GitHub as Markdown files (under wp2git-content/). When auto-apply is on, edits to those files on GitHub are applied back to the matching post. Removing a file never deletes a post — it is simply re-exported.', 'wp2git' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Site configuration snapshots', 'wp2git' ); ?></th>
+					<td>
+						<?php foreach ( \WP2Git\Backup\DatabaseExporter::GROUPS as $group ) : ?>
+							<label style="display:block;margin-bottom:.35em">
+								<input type="checkbox"
+									name="database_groups[<?php echo esc_attr( $group ); ?>]"
+									value="1"
+									<?php checked( in_array( $group, $database_types, true ) ); ?>>
+								<?php echo esc_html( $database_labels[ $group ] ); ?>
+							</label>
+						<?php endforeach; ?>
+						<p class="description">
+							<?php
+							esc_html_e(
+								'Exports selected database records as readable JSON under wp2git-data/. These snapshots are backup-only: incoming GitHub edits or deletions never overwrite the database. General options, transients, users and submissions are not selected; credential-shaped keys are redacted.',
+								'wp2git'
+							);
+							?>
+						</p>
+						<p class="description"><strong>
+							<?php
+							esc_html_e(
+								'Templates, widgets and snippets may still contain private information or executable code. Enable only what you need and keep the repository private.',
+								'wp2git'
+							);
+							?>
+						</strong></p>
 					</td>
 				</tr>
 				<tr>
@@ -627,6 +706,45 @@ final class SettingsPage {
 			}
 			?>
 		</em></p>
+
+		<div id="wp2git-push-progress" style="display:none;max-width:680px;margin:12px 0 18px">
+			<p style="margin:0 0 4px"><strong id="wp2git-progress-label"></strong></p>
+			<div style="background:#dcdcde;border-radius:3px;height:22px;overflow:hidden">
+				<div id="wp2git-progress-bar" style="background:#2271b1;height:100%;width:0;transition:width .3s ease;border-radius:3px"></div>
+			</div>
+			<p id="wp2git-progress-detail" class="description" style="margin:4px 0 0"></p>
+		</div>
+		<script>
+		(function(){
+			var wrap   = document.getElementById('wp2git-push-progress');
+			var label  = document.getElementById('wp2git-progress-label');
+			var bar    = document.getElementById('wp2git-progress-bar');
+			var detail = document.getElementById('wp2git-progress-detail');
+			var url    = <?php echo wp_json_encode( esc_url_raw( rest_url( 'wp2git/v1/status' ) ) ); ?>;
+			var nonce  = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
+			var timer  = null;
+			function poll(){
+				fetch(url,{headers:{'X-WP-Nonce':nonce},credentials:'same-origin'})
+				.then(function(r){return r.json()})
+				.then(function(d){
+					var p = d && d.push_progress;
+					if(!p){
+						wrap.style.display='none';
+						if(timer){clearInterval(timer);timer=null;}
+						return;
+					}
+					wrap.style.display='';
+					var pct = p.total>0 ? Math.round(p.completed/p.total*100) : 0;
+					label.textContent = <?php echo wp_json_encode( __( 'Uploading to GitHub…', 'wp2git' ) ); ?>;
+					bar.style.width = pct+'%';
+					detail.textContent = p.completed+' / '+p.total+' '+<?php echo wp_json_encode( __( 'files', 'wp2git' ) ); ?>+' ('+pct+'%)';
+				})
+				.catch(function(){});
+			}
+			poll();
+			timer = setInterval(poll, 5000);
+		})();
+		</script>
 
 		<h2><?php esc_html_e( 'Auto-apply security', 'wp2git' ); ?></h2>
 		<?php

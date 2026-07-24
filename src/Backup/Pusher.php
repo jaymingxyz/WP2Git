@@ -27,7 +27,13 @@ final class Pusher {
 	/** Blobs created per background job — keeps each run well under time/rate limits. */
 	private const BATCH_SIZE = 50;
 
+	/** Max tree entries per Create Tree API call — GitHub 500s above ~2000. */
+	private const TREE_CHUNK = 1000;
+
 	private const JOB_OPTION = 'wp2git_push_job';
+
+	/** @var array<string,int>|null Scan counters populated by planJob(). */
+	private ?array $lastScanCounts = null;
 
 	public function __construct( private readonly Plugin $plugin ) {
 	}
@@ -67,8 +73,20 @@ final class Pusher {
 		try {
 			$job = $this->loadJob() ?? $this->planJob();
 			if ( $job === null ) {
-				$this->plugin->logger->log( Logger::PUSH, array( 'changed' => 0 ) );
-				return array( 'changed' => 0 );
+				$dbStats = $this->plugin->databaseExporter->lastScanStats();
+				$this->plugin->logger->log(
+					Logger::PUSH,
+					array(
+						'changed'  => 0,
+						'scan'     => $this->lastScanCounts,
+						'db_stats' => $dbStats,
+					)
+				);
+				return array(
+					'changed'  => 0,
+					'scan'     => $this->lastScanCounts,
+					'db_stats' => $dbStats,
+				);
 			}
 
 			while ( true ) {
@@ -120,10 +138,13 @@ final class Pusher {
 	 * @return array{changes:list<array{path:string,op:string}>,tree:list<array<string,mixed>>}|null
 	 */
 	private function planJob(): ?array {
-		// Files under wp-content plus any exported database content (posts/pages).
-		// Their repo paths never collide (exports live under a reserved prefix),
-		// so the union diffs against the manifest exactly like files do.
-		$current = $this->plugin->scanner->scan() + $this->plugin->exporter->scan();
+		// Files under wp-content, post/page exports, and structured database
+		// snapshots all use disjoint reserved prefixes, so they can share the same
+		// manifest and incremental Git tree machinery.
+		$fileHashes = $this->plugin->scanner->scan();
+		$contentHashes = $this->plugin->exporter->scan();
+		$dbHashes = $this->plugin->databaseExporter->scan();
+		$current = $fileHashes + $contentHashes + $dbHashes;
 		$known   = $this->plugin->manifest->all();
 
 		$changes = array();
@@ -137,12 +158,26 @@ final class Pusher {
 		}
 		foreach ( $known as $repoPath => $_row ) {
 			if ( ! isset( $current[ $repoPath ] ) ) {
+				// A failed or cross-site database scan is not authoritative. Keep its
+				// last good Git snapshot instead of mistaking "unavailable" for
+				// "deleted". Explicitly disabling a group remains authoritative.
+				if ( $this->plugin->databaseExporter->owns( $repoPath )
+					&& ! $this->plugin->databaseExporter->shouldDeleteMissing( $repoPath ) ) {
+					continue;
+				}
 				$changes[] = array(
 					'path' => $repoPath,
 					'op'   => 'delete',
 				);
 			}
 		}
+
+		$this->lastScanCounts = array(
+			'files'    => count( $fileHashes ),
+			'content'  => count( $contentHashes ),
+			'database' => count( $dbHashes ),
+			'manifest' => count( $known ),
+		);
 
 		if ( $changes === array() ) {
 			return null;
@@ -208,11 +243,14 @@ final class Pusher {
 
 	/**
 	 * Content for a path being pushed: exported database content is regenerated
-	 * from the post, everything else is read from disk. Null means "skip".
+	 * from WordPress, everything else is read from disk. Null means "skip".
 	 */
 	private function contentFor( string $repoPath ): ?string {
 		if ( $this->plugin->exporter->owns( $repoPath ) ) {
 			return $this->plugin->exporter->render( $repoPath );
+		}
+		if ( $this->plugin->databaseExporter->owns( $repoPath ) ) {
+			return $this->plugin->databaseExporter->render( $repoPath );
 		}
 		$raw = @file_get_contents( $this->plugin->paths->toLocal( $repoPath ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		return $raw === false ? null : $raw;
@@ -248,7 +286,7 @@ final class Pusher {
 			$parents = array( $head );
 		}
 
-		$treeSha = $gitData->createTree( $treeEntries, $baseTree );
+		$treeSha = $this->createTreeChunked( $treeEntries, $baseTree );
 		if ( is_wp_error( $treeSha ) ) {
 			return $treeSha;
 		}
@@ -278,9 +316,13 @@ final class Pusher {
 				$this->plugin->manifest->delete( $path );
 			} else {
 				$sha  = (string) $entry['sha'];
-				$type = $this->plugin->exporter->owns( $path )
-					? $this->plugin->exporter->contentType( $path )
-					: $this->plugin->scope->contentType( $path );
+				if ( $this->plugin->exporter->owns( $path ) ) {
+					$type = $this->plugin->exporter->contentType( $path );
+				} elseif ( $this->plugin->databaseExporter->owns( $path ) ) {
+					$type = $this->plugin->databaseExporter->contentType( $path );
+				} else {
+					$type = $this->plugin->scope->contentType( $path );
+				}
 				$this->plugin->manifest->upsert( $path, $type, $sha, $sha, $commitSha );
 			}
 		}
@@ -293,6 +335,47 @@ final class Pusher {
 			'changed' => $count,
 			'commit'  => $commitSha,
 		);
+	}
+
+	/**
+	 * Current push progress, or null when no job is queued.
+	 *
+	 * @return array{remaining:int,completed:int,total:int}|null
+	 */
+	public function progress(): ?array {
+		$job = $this->loadJob();
+		if ( $job === null ) {
+			return null;
+		}
+		$remaining = count( $job['changes'] );
+		$completed = count( $job['tree'] );
+		return array(
+			'remaining' => $remaining,
+			'completed' => $completed,
+			'total'     => $remaining + $completed,
+		);
+	}
+
+	/**
+	 * GitHub's Create Tree API fails on very large payloads (~2000+ entries).
+	 * Split into chunks, threading each result as the next base_tree.
+	 *
+	 * @param list<array<string,mixed>> $entries
+	 * @return string|WP_Error Tree SHA.
+	 */
+	private function createTreeChunked( array $entries, ?string $baseTree ) {
+		if ( count( $entries ) <= self::TREE_CHUNK ) {
+			return $this->plugin->gitData->createTree( $entries, $baseTree );
+		}
+		$current = $baseTree;
+		foreach ( array_chunk( $entries, self::TREE_CHUNK ) as $chunk ) {
+			$result = $this->plugin->gitData->createTree( $chunk, $current );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$current = $result;
+		}
+		return $current;
 	}
 
 	// --- Job persistence --------------------------------------------------

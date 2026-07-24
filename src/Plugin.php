@@ -9,6 +9,7 @@ defined( 'ABSPATH' ) || exit;
 use WP2Git\Admin\ConflictsPage;
 use WP2Git\Admin\SettingsPage;
 use WP2Git\Backup\ContentExporter;
+use WP2Git\Backup\DatabaseExporter;
 use WP2Git\Backup\FileScanner;
 use WP2Git\Backup\Manifest;
 use WP2Git\Backup\Pusher;
@@ -52,6 +53,7 @@ final class Plugin {
 	public readonly GitData $gitData;
 	public readonly FileScanner $scanner;
 	public readonly ContentExporter $exporter;
+	public readonly DatabaseExporter $databaseExporter;
 	public readonly Pusher $pusher;
 	public readonly ChangeFetcher $fetcher;
 	public readonly SafetyGate $gate;
@@ -74,20 +76,21 @@ final class Plugin {
 		$this->github     = new Client( $this->credential, $this->logger );
 		$this->webhooks   = new Webhooks( $this->github, $this->settings );
 
-		$this->paths     = new Paths();
-		$this->scope     = new Scope( $this->settings );
-		$this->manifest  = new Manifest();
-		$this->gitData   = new GitData( $this->github, $this->settings );
-		$this->scanner   = new FileScanner( $this->paths, $this->scope, $this->logger );
-		$this->exporter  = new ContentExporter( $this->settings );
-		$this->fetcher   = new ChangeFetcher( $this->gitData );
-		$this->gate      = new SafetyGate( $this->paths, $this->scope );
-		$this->importer  = new ContentImporter( $this->settings, $this->exporter );
-		$this->pusher    = new Pusher( $this );
-		$this->applier   = new Applier( $this );
-		$this->conflicts = new Conflicts( $this );
-		$this->scheduler = new Scheduler( $this );
-		$this->watcher   = new ChangeWatcher( $this );
+		$this->paths            = new Paths();
+		$this->scope            = new Scope( $this->settings );
+		$this->manifest         = new Manifest();
+		$this->gitData          = new GitData( $this->github, $this->settings );
+		$this->scanner          = new FileScanner( $this->paths, $this->scope, $this->logger );
+		$this->exporter         = new ContentExporter( $this->settings );
+		$this->databaseExporter = new DatabaseExporter( $this->settings, $this->logger );
+		$this->fetcher          = new ChangeFetcher( $this->gitData );
+		$this->gate             = new SafetyGate( $this->paths, $this->scope );
+		$this->importer         = new ContentImporter( $this->settings, $this->exporter );
+		$this->pusher           = new Pusher( $this );
+		$this->applier          = new Applier( $this );
+		$this->conflicts        = new Conflicts( $this );
+		$this->scheduler        = new Scheduler( $this );
+		$this->watcher          = new ChangeWatcher( $this );
 	}
 
 	public static function instance(): Plugin {

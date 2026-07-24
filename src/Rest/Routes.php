@@ -221,9 +221,11 @@ final class Routes {
 				'connected'       => $this->plugin->settings->isConnected(),
 				'enabled'         => $this->plugin->isEnabled(),
 				'auto_apply'      => $this->plugin->settings->autoApply(),
+				'database_groups' => $this->plugin->settings->databaseGroups(),
 				'state'           => $this->plugin->state->current(),
 				'last_synced_sha' => $this->plugin->state->lastSyncedSha(),
 				'rate_remaining'  => $this->plugin->github->rateRemaining(),
+				'push_progress'   => $this->plugin->pusher->progress(),
 			),
 			200
 		);

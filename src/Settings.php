@@ -93,6 +93,26 @@ final class Settings {
 	}
 
 	/**
+	 * Structured database snapshot groups to back up. These are deliberately
+	 * opt-in because templates, widgets and snippets can contain private data or
+	 * executable code.
+	 *
+	 * @return list<string>
+	 */
+	public function databaseGroups(): array {
+		$stored = $this->get( 'database_groups', array() );
+		if ( ! is_array( $stored ) ) {
+			return array();
+		}
+		return array_values(
+			array_filter(
+				\WP2Git\Backup\DatabaseExporter::GROUPS,
+				static fn ( $group ) => ! empty( $stored[ $group ] ) || in_array( $group, $stored, true )
+			)
+		);
+	}
+
+	/**
 	 * Whether incoming commits are applied to this site. When false the plugin
 	 * is backup-only: it still pushes wp-content to GitHub but never pulls or
 	 * writes anything from GitHub back to the live site. Defaults to true so

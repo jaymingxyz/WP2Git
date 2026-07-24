@@ -65,10 +65,7 @@ final class Applier {
 			return $changes;
 		}
 
-		$fs = $this->filesystem();
-		if ( is_wp_error( $fs ) ) {
-			return $fs;
-		}
+		$fs = null;
 
 		$stats = array(
 			'applied'   => 0,
@@ -87,6 +84,24 @@ final class Applier {
 			if ( $this->plugin->exporter->owns( $path ) ) {
 				$this->applyContentChange( $change, $stats, $headSha );
 				continue;
+			}
+
+			// Structured site-configuration records are intentionally one-way
+			// snapshots. Never turn a Git edit into a database write (particularly
+			// for executable snippets); invalidate the manifest so the next backup
+			// restores WordPress's authoritative version in the repository.
+			if ( $this->plugin->databaseExporter->owns( $path ) ) {
+				$this->keepDatabaseSnapshot( $change, $stats, $headSha );
+				continue;
+			}
+
+			// Database-only pulls do not need filesystem credentials. Initialize
+			// lazily when the first actual wp-content change is encountered.
+			if ( $fs === null ) {
+				$fs = $this->filesystem();
+				if ( is_wp_error( $fs ) ) {
+					return $fs;
+				}
 			}
 
 			// Renames: drop the old path, then add the new one.
@@ -166,6 +181,52 @@ final class Applier {
 		} else {
 			++$stats['skipped'];
 		}
+	}
+
+	/**
+	 * Keep a structured database snapshot one-way and non-destructive. Remote
+	 * writes, removals and renames all cause the local record to be re-exported
+	 * on the next push; none are applied to WordPress.
+	 *
+	 * @param array{path:string,status:string,sha:?string,previous:?string} $change
+	 * @param array{applied:int,conflicts:int,skipped:int,deleted:int}       $stats
+	 */
+	private function keepDatabaseSnapshot( array $change, array &$stats, string $headSha ): void {
+		$path = $change['path'];
+		if ( $change['status'] === 'renamed'
+			&& is_string( $change['previous'] )
+			&& $this->plugin->databaseExporter->owns( $change['previous'] ) ) {
+			$this->plugin->manifest->delete( $change['previous'] );
+		}
+
+		$localSnapshot = $this->plugin->databaseExporter->render( $path );
+		if ( $localSnapshot !== null || $change['status'] === 'removed' ) {
+			// A real local record must be written back; a removed remote record that
+			// is also absent locally is already in the desired state.
+			$this->plugin->manifest->delete( $path );
+		} elseif ( is_string( $change['sha'] ) && $change['sha'] !== '' ) {
+			// Track a remote-only artifact just long enough for the next authoritative
+			// scan to delete it. This also cleans up the destination of a Git rename.
+			$sha = $change['sha'];
+			$this->plugin->manifest->upsert(
+				$path,
+				$this->plugin->databaseExporter->contentType( $path ),
+				$sha,
+				$sha,
+				$headSha
+			);
+		} else {
+			$this->plugin->manifest->delete( $path );
+		}
+		$this->plugin->logger->log(
+			Logger::PULL,
+			array(
+				'database_snapshot_kept' => $path,
+				'remote_status'          => $change['status'],
+			),
+			$headSha
+		);
+		++$stats['skipped'];
 	}
 
 	/**

@@ -4,11 +4,11 @@ Tags: github, backup, deploy, sync, version-control
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.3.0
+Stable tag: 1.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Two-way sync between your wp-content folder and a private GitHub repository.
+Two-way wp-content sync with optional content and site-configuration backups.
 
 == Description ==
 
@@ -22,10 +22,24 @@ wp-content in sync in both directions:
 * **Update (GitHub to WP):** pushes to the configured branch are applied back to
   the live site automatically via a signed webhook, with three-way conflict
   resolution that never discards your local edits silently.
+* **Posts and Pages (optional):** published posts/pages are exported as readable
+  Markdown and retain their existing two-way behavior when auto-apply is on.
+* **Site configuration snapshots (optional):** selected Site Editor data,
+  Customizer settings, menus, Additional CSS, widgets, recognized plugin
+  templates, and WPCode data are exported as deterministic JSON under
+  `wp2git-data/v1/sites/<blog-id>/`. These snapshots are always one-way backups.
 
 Authenticate with either a fine-grained Personal Access Token or a GitHub App
 (short-lived installation tokens). Works on single-site and network-activated
 multisite (one shared connection for the network's wp-content).
+
+Developers can extend the narrow snapshot allowlists with the
+`wp2git_plugin_template_post_types`, `wp2git_wpcode_post_types`,
+`wp2git_customizer_option_names`, and `wp2git_widget_option_names` filters. The
+`wp2git_database_snapshot_value` filter can adjust a complete snapshot before
+canonical JSON encoding; WP2Git reapplies sensitive-key redaction afterward.
+WP2Git settings, transients, cron/role state, and plugin-activation state remain
+hard-denied.
 
 = Security notes =
 
@@ -33,7 +47,15 @@ Auto-apply means anyone who can push to the connected branch can run code on
 your server. WP2Git enforces a private-repo-only policy, verifies every webhook
 with an HMAC signature, and supports a pusher allowlist — but the most important
 control is **GitHub branch protection with required reviews** on the synced
-branch. Database content is never synced; only files under wp-content.
+branch.
+
+All Posts/Pages and site-configuration database exports are off by default.
+Configuration snapshots use narrow allowlists and redact sensitive keys, but
+templates, widgets, CSS, and snippets can still contain private information or
+executable code. Enable only the groups you need and keep the repository
+private. Snapshots are never imported: GitHub edits, renames, and deletions do
+not write to the database, and the next backup restores WordPress's
+authoritative snapshot in the repository.
 
 When files change on both sides, the GitHub version wins but your local copy is
 preserved under wp-content/.wp2git/conflicts and can be restored from the
@@ -89,10 +111,47 @@ Files under wp-content are the core sync. Optionally, you can also back up
 published Posts and Pages (Backup → Database content): each is exported to GitHub
 as a Markdown file with YAML frontmatter. When auto-apply is on, edits to those
 files on GitHub are applied back to the matching post (title, excerpt and body);
-removing a file never deletes a post. Everything else in the database (settings,
-users, secrets, PII) stays out of the repository by design.
+removing a file never deletes a post.
+
+Separately, you can opt into one-way site-configuration snapshots for Site
+Editor templates, template parts, global styles, navigation and patterns;
+Customizer theme mods; classic menus and locations; Additional CSS; widgets and
+sidebars; recognized plugin/page-builder template post types; and WPCode plus
+legacy header/footer code. They are deterministic JSON files under
+`wp2git-data/v1/sites/<blog-id>/`. GitHub changes never write these snapshots
+back to WordPress; the next backup restores the database's authoritative copy.
+This is not a full database backup: users, submissions, transients, general
+options, and unrelated plugin data remain excluded through narrow allowlists;
+credential-shaped keys are redacted. Selected content can still contain
+sensitive values, so keep the repository private.
 
 == Changelog ==
+
+= 1.4.1 =
+* Fixed "Server Error" when the initial backup contains more than ~2 000 files
+  by splitting the Git tree creation into chunked API calls.
+* Added a live progress bar to the dashboard that polls the REST status endpoint
+  while a background push is running (e.g. "Uploading: 550 / 3 598 files").
+* Improved diagnostics when a backup finds nothing to push: the admin notice now
+  explains whether the scan found zero files, database snapshot groups produced
+  no output, or snapshot errors occurred.
+
+= 1.4.0 =
+* Added opt-in site-configuration snapshots for Site Editor templates, template
+  parts, global styles, navigation and patterns; Customizer settings; classic
+  menus and locations; Additional CSS; widgets and sidebars; recognized plugin
+  and page-builder templates; and WPCode plus legacy header/footer code.
+* Snapshots are deterministic JSON under `wp2git-data/v1/sites/<blog-id>/`, with
+  separate paths per multisite site.
+* Configuration snapshots are always one-way and non-destructive. GitHub edits,
+  renames, or deletions never write to the database; a later backup restores the
+  authoritative WordPress snapshot. Posts and Pages keep their existing two-way
+  behavior.
+* All database export groups remain off by default. Snapshot capture uses narrow
+  post-type/option allowlists and sensitive-key redaction, with extension hooks
+  for supported plugin integrations. Because templates and snippets may contain
+  private or executable data, a private, access-controlled repository remains
+  essential.
 
 = 1.3.0 =
 * Posts/Pages backup is now two-way: with auto-apply on, edits to the exported
